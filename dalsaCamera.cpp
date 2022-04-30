@@ -255,14 +255,14 @@ int DalsaCamera::open(int width, int height, float framerate, float exposureTime
 
 	// Initialise Image Transfer
 	// TODO: Use Sync! It's more thread safe
-	if(GevInitImageTransfer(handle, Asynchronous, numBuf, bufAddress))
+	if(GevInitializeTransfer(handle, Asynchronous, size, numBuf, bufAddress))
 	{
 		cerr << "Failed to Initiliaze image transfer\n";
 		return 1;
 	}
 
 	// TODO: Offload this to record/start functions?
-	if(GevStartImageTransfer(handle, -1))
+	if(GevStartTransfer(handle, -1))
 	{
 		cerr << "Failed to start image transfer\n";
 		return 1;
@@ -489,8 +489,8 @@ int DalsaCamera::close()
 	// TODO: Although this works, try/catch could be avoided by checking _isOpened etc....
 	try
 	{
-		GevAbortImageTransfer(handle);
-		status = GevFreeImageTransfer(handle);	
+		GevAbortTransfer(handle);
+		status = GevFreeTransfer(handle);	
 	}
 	catch(...){}
 

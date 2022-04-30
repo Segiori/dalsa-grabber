@@ -41,8 +41,8 @@ namespace po = boost::program_options;
 // TODO: include option for scale
 #define MONITOR_SCALE 1
 #define WINDOW_NAME "Dalsa Monitor"
-#define DEFAULT_FRAMERATE 29
-#define DEFAULT_WIDTH 2560
+#define DEFAULT_FRAMERATE 20
+#define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 1024
 #define DEFAULT_EXPOSURE 10000
 #define DEFAULT_CRF 15
