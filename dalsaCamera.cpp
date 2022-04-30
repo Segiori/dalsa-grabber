@@ -76,6 +76,15 @@ int DalsaCamera::isOpened()
 	return _isOpened;
 }
 
+void DalsaCamera::setSoftTriggerParameter()
+{
+    // Set the Nano to Trigger on Action1.
+	GevSetFeatureValueAsString(handle, "TriggerMode", "On");
+    GevSetFeatureValueAsString(handle, "TriggerSelector", "FrameStart");
+    GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
+    GevSetFeatureValueAsString(handle, "TriggerSource", "Software");
+}
+
 /* Initialise the camera for frame acquisition  */
 int DalsaCamera::open(int width, int height, float framerate, float exposureTime)
 {
@@ -384,6 +393,65 @@ int DalsaCamera::getNextImage(cv::Mat *img)
 
 	//TODO: handle a reset of next frame
 	_tNextFrameMicroseconds = next_timestamp + periodMicroseconds();
+
+	// Debayer the image
+    cv::Mat imgCv = cv::Mat(height(), width(), CV_8UC1, imgGev->address);
+    cv::Mat rgb8BitMat(height(), width(), CV_8UC3);
+    cv::cvtColor(imgCv, rgb8BitMat, CV_BayerGB2RGB);
+
+    *img = rgb8BitMat;
+
+    // Release Image Buffer
+	GevReleaseImage(handle, imgGev);
+	imgCv.release();
+
+	return 0;
+}
+
+int DalsaCamera::getNextImage2(cv::Mat *img)
+{
+
+	GEV_BUFFER_OBJECT* imgGev = NULL;
+
+	// Check for camera state
+	if(!isOpened())
+	{
+		cerr << "open camera before calling get_next_image";
+		return 1;
+	}
+
+	// Soft Trigger
+	GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
+	GevWaitForNextImage(handle, &imgGev, 1000);
+
+	// // Cache frames to the map until the next one is acquired
+	// uint64_t next_timestamp = 0;
+	// while(!next_timestamp)
+	// {
+	// 	// Acquire next image and cache into map
+	// 	GEV_BUFFER_OBJECT *nextImage = nextAcquiredImage();
+	// 	uint64_t acquired_t = combineTimestamps(nextImage->timestamp_lo, nextImage->timestamp_hi);
+	// 	_reorderingMap[acquired_t] = nextImage;
+
+	// 	// Check for _tNextFrameMicroseconds within a microsecond tolerance to account for rounding error
+	// 	for(uint64_t t=_tNextFrameMicroseconds-2; t<=_tNextFrameMicroseconds+2; t++)
+	// 	{
+	// 		if(_reorderingMap.find(t) != _reorderingMap.end())
+	// 		{
+	// 			next_timestamp = t;
+	// 			break;
+	// 		}
+	// 	}
+	// }
+	
+  	// // Get the next frame
+   	// GEV_BUFFER_OBJECT *imgGev = _reorderingMap[next_timestamp];
+   	// _reorderingMap.erase(next_timestamp);
+
+	// logImg(imgGev);
+
+	// //TODO: handle a reset of next frame
+	// _tNextFrameMicroseconds = next_timestamp + periodMicroseconds();
 
 	// Debayer the image
     cv::Mat imgCv = cv::Mat(height(), width(), CV_8UC1, imgGev->address);

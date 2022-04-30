@@ -224,6 +224,57 @@ void snapshot(DalsaCamera *camera, po::parsed_options parsed, po::variables_map 
     camera->close();
 }
 
+/* Live heads-up display of the dalsa */
+void softTrigger(DalsaCamera *camera)
+{
+    cv::Mat img;
+
+    // Setup OpenCV display window
+    namedWindow(WINDOW_NAME, WINDOW_NORMAL);
+ 
+    // Use first image to setup window
+    if(camera->getNextImage2(&img))
+    {
+        camera->close();
+        cvDestroyWindow(WINDOW_NAME);
+        return;
+    }
+    cv::Mat displayImg;
+    cv::resize(img, displayImg, cv::Size(), MONITOR_SCALE, MONITOR_SCALE);
+    cv::resizeWindow(WINDOW_NAME, displayImg.cols, displayImg.rows);
+
+    // Display loop
+    for(;;)
+    {
+
+        // Grab frame
+        if(camera->getNextImage2(&img))
+        {
+            break;
+        }
+
+        // Display
+        cv::Mat displayImg;
+        cv::resize(img, displayImg, cv::Size(), MONITOR_SCALE, MONITOR_SCALE);
+
+        imshow(WINDOW_NAME, displayImg);
+        img.release();
+        displayImg.release(); 
+
+        // User input
+        int key = waitKey(1);
+        if( (char) key == 'q') 
+        {
+            cout << "Quitting...\n";
+            break; 
+        } 
+    }
+
+    // Cleanup
+    camera->close();
+    cvDestroyWindow(WINDOW_NAME);
+}
+
 
 /* A simple console app to record and monitor using a Teledyne Dalsa GigE-V camera */
 int main(int argc, char* argv[])
@@ -305,6 +356,11 @@ int main(int argc, char* argv[])
     else if(command == "snapshot")
     {
         snapshot(DALSA_CAMERA, parsed, vm, globalArgs); 
+    }
+    else if(command == "softTrigger")
+    {
+        DALSA_CAMERA->setSoftTriggerParameter();
+        softTrigger(DALSA_CAMERA);
     }
     else
     {

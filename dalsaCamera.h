@@ -43,10 +43,12 @@ class DalsaCamera
 		int isOpened();
 		int open(int width, int height, float framerate, float exposureTime);
 		int getNextImage(cv::Mat *img);
+		int getNextImage2(cv::Mat *img);
 		int close();
 		int periodMicroseconds();
 		int record(float duration, int crf, char filename[]);
 		int snapshot(char filename[]);
+		void setSoftTriggerParameter();
 		bool debug;
 
 		static uint64_t combineTimestamps(uint32_t low, uint32_t high);
