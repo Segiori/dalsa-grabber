@@ -14,6 +14,7 @@
 #include <map>
 #include <ctime>
 #include <time.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -40,6 +41,7 @@ using namespace cv;
 #define STREAMFRAME_MEMORY_LIMIT_MAX 64*1024*1024	// Adjust packet memory buffering limit.	
 #define STREAMFRAME_PACKET_SIZE 9180					// Adjust the GVSP packet size.
 #define STREAMFRAME_PACKET_DELAY 10					// Add usecs between packets to pace arrival at NIC.
+
 
 
 DalsaCamera::DalsaCamera(bool debugMode=true)
@@ -74,15 +76,6 @@ float DalsaCamera::framerate()
 int DalsaCamera::isOpened()
 {
 	return _isOpened;
-}
-
-void DalsaCamera::setSoftTriggerParameter()
-{
-    // Set the Nano to Trigger on Action1.
-	GevSetFeatureValueAsString(handle, "TriggerMode", "On");
-    GevSetFeatureValueAsString(handle, "TriggerSelector", "FrameStart");
-    GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
-    GevSetFeatureValueAsString(handle, "TriggerSource", "Software");
 }
 
 /* Initialise the camera for frame acquisition  */
@@ -166,6 +159,10 @@ int DalsaCamera::open(int width, int height, float framerate, float exposureTime
 		cerr << "Failed to open xml file for camera status: %s\n";
 		cerr << "For File: " << xmlFileName;
 	}
+
+    // Set the Nano to TriggerMode Off
+	GevSetFeatureValueAsString(handle, "TriggerMode", "Off");
+    GevSetFeatureValueAsString(handle, "TriggerSoftware", "Off");
 	
 	// Always disable pesky auto-brightness
 	int autoBrightness = 0;
@@ -212,6 +209,7 @@ int DalsaCamera::open(int width, int height, float framerate, float exposureTime
 		cerr << "Failed to set height to " << height << endl;
 		return 1;
 	}
+
 
 	// Get camera settings
 	// TODO: Assert the retrieved value matches the one passed in
@@ -281,6 +279,220 @@ int DalsaCamera::open(int width, int height, float framerate, float exposureTime
 	GEV_BUFFER_OBJECT* img_obj = nextAcquiredImage();
 	_tNextFrameMicroseconds = periodMicroseconds() + 
 		combineTimestamps(img_obj->timestamp_lo, img_obj->timestamp_hi);
+
+	_isOpened = 1;
+
+	// For framerate acquisition logging
+	tStart = time(NULL);
+
+	return 0;
+}
+
+
+/* Initialise the camera for frame acquisition  */
+int DalsaCamera::open2(int width, int height, float framerate, float exposureTime)
+{
+	// Check validity of framerate and exposure
+	if(framerate <= 0)
+	{
+		cerr << "Invalid Framerate: " << framerate << endl;
+		return 1;
+	}
+
+	float max_exposure = 1000000/framerate;
+	if(max_exposure <= exposureTime)
+	{
+		cerr << "Exposure longer than framerate (max " << (int)max_exposure << "us" << " for a framerate of " <<  framerate << ")" << endl;
+		return 1;
+	}
+
+	// Set default options for the library.
+	GEVLIB_CONFIG_OPTIONS options = {0};
+	GevGetLibraryConfigOptions( &options);
+	options.logLevel = GEV_LOG_LEVEL_NORMAL;
+	GevSetLibraryConfigOptions(&options);
+
+	// Discover Cameras
+	int numCameras = 0;
+	//TODO: why does genicam_cpp_demo use the equation (MAX_NETIF * MAX_CAMERAS_PER_NETIF) with the hardcoded value below?
+	int maxCameras = 8 * 32;
+
+	GEV_DEVICE_INTERFACE  pCamera[maxCameras] = {0};
+	if(GevGetCameraList(pCamera, maxCameras, &numCameras))
+	{
+		cerr << "Failed to get camera list\n";
+		return 1;
+	}
+
+	if(!numCameras)
+	{
+		cerr << "ERROR: Could not find any cameras\n";
+		return 1;
+	}
+
+	// Open first camera
+	// TODO: Handle multiple cmaeras
+	int camIndex = 0;
+	if(GevOpenCamera(&pCamera[0], GevExclusiveMode, &handle))
+	{
+		cerr << "Failed to open camera\n";
+		return 1;
+	}
+
+	// Settings taken from genicam_cpp_demo from GigE-V framework
+	// TODO: offload to settings file?
+	// TODO: does it work reliably without these settings?
+	GEV_CAMERA_OPTIONS camOptions = {0};
+	GevGetCameraInterfaceOptions(handle, &camOptions);
+
+	// Set camera stream options (taken from genicam_cpp_demo)
+	GevGetCameraInterfaceOptions( handle, &camOptions);
+	
+	camOptions.heartbeat_timeout_ms = HEARTBEAT_TIMEOUT_MS;					// For debugging (delay camera timeout while in debugger)
+	camOptions.streamFrame_timeout_ms = STREAMFRAME_TIMEOUT_MS;				// Internal timeout for frame reception.
+	camOptions.streamNumFramesBuffered = STREAMFRAME_NUM_FRAMES_BUFFERED;	// Buffer frames internally.
+	camOptions.streamMemoryLimitMax = STREAMFRAME_MEMORY_LIMIT_MAX;			// Adjust packet memory buffering limit.	
+	camOptions.streamPktSize = STREAMFRAME_PACKET_SIZE;						// Adjust the GVSP packet size.
+	camOptions.streamPktDelay = STREAMFRAME_PACKET_DELAY;					// Add usecs between packets to pace arrival at NIC.
+
+	GevSetCameraInterfaceOptions(handle, &camOptions);
+
+	// Initiliaze access to GenICam features via Camera XML File
+	if (GevInitGenICamXMLFeatures(handle, TRUE))
+	{
+		cerr << "Failed to find xml file for camera \n";
+	}
+
+	// Get the name of XML file name back (example only - in case you need it somewhere).
+	char xmlFileName[MAX_PATH] = {0};
+	if(GevGetGenICamXML_FileName(handle, (int)sizeof(xmlFileName), xmlFileName)) 
+	{
+		cerr << "Failed to open xml file for camera status: %s\n";
+		cerr << "For File: " << xmlFileName;
+	}
+
+    GevSetFeatureValueAsString(handle, "TriggerSelector", "FrameStart");
+    GevSetFeatureValueAsString(handle, "TriggerSource", "Software");
+
+	// Always disable pesky auto-brightness
+	int autoBrightness = 0;
+	if(GevSetFeatureValue(handle, "autoBrightnessMode", sizeof(autoBrightness), &autoBrightness))
+	{
+		cerr << "Failed to set autobrightness to " << autoBrightness << endl;
+		return 1;
+	}
+
+	if(GevSetFeatureValue(handle, "ExposureTime", sizeof(exposureTime), &exposureTime))
+	{
+		cerr << "Failed to set exposureTime to " << exposureTime << endl;
+		return 1;
+	}
+
+	// if(GevSetFeatureValue(handle, "AcquisitionFrameRate", sizeof(framerate), &framerate))
+	// {
+	// 	cerr << "Failed to set framerate to " << framerate << stat << endl;
+	// 	return 1;
+	// }
+
+	int zero= 0;
+	if(GevSetFeatureValue(handle, "OffsetY", sizeof(zero), &zero))
+	{
+		cerr << "Failed to initialise height offset to " << zero << endl;
+		return 1;
+	}
+
+	if(GevSetFeatureValue(handle, "OffsetX", sizeof(zero), &zero))
+	{
+		cerr << "Failed to initialise width offset to " << zero << endl;
+		return 1;
+	}
+
+	// Whacking down the resolution Setting Feature Values
+	if(GevSetFeatureValue(handle, "Width", sizeof(width), &width))
+	{
+		cerr << "Failed to set width to " << width << endl;
+		return 1;
+	}
+	
+	if(GevSetFeatureValue(handle, "Height", sizeof(height), &height))
+	{
+		cerr << "Failed to set height to " << height << endl;
+		return 1;
+	}
+
+
+    // Set the Nano to Trigger on Action1.
+	GevSetFeatureValueAsString(handle, "TriggerMode", "On");
+    GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
+
+	// Get camera settings
+	// TODO: Assert the retrieved value matches the one passed in
+	int type;	
+	float readExposed = -1;
+
+	GevGetFeatureValue(handle, "Width", &type, sizeof(width), &width);
+	GevGetFeatureValue(handle, "Height", &type, sizeof(height), &height);
+	GevGetFeatureValue(handle, "AcquisitionFrameRate", &type, sizeof(framerate), &framerate);
+	GevGetFeatureValue(handle, "ExposureTime", &type, sizeof(readExposed), &readExposed);
+
+	// Set height and width offsets to centralise image
+	int heightOffset, widthOffset, heightMax, widthMax;	 
+	GevGetFeatureValue(handle, "WidthMax", &type, sizeof(widthMax), &widthMax);
+	GevGetFeatureValue(handle, "HeightMax", &type, sizeof(heightMax), &heightMax);
+
+	heightOffset= floor((heightMax-height)/2);
+	widthOffset= floor((widthMax-width)/2);
+
+	if(GevSetFeatureValue(handle, "OffsetY", sizeof(heightOffset), &heightOffset))
+	{
+		cerr << "Failed to initialise height offset to " << heightOffset << endl;
+		return 1;
+	}
+
+	if(GevSetFeatureValue(handle, "OffsetX", sizeof(widthOffset), &widthOffset))
+	{
+		cerr << "Failed to initialise width offset to " << widthOffset << endl;
+		return 1;
+	}
+
+	_width = width;
+	_height = height;
+	_framerate = framerate;
+	_exposure = readExposed;
+
+	// Log
+	logCamera();
+
+	// Allocate buffers
+	UINT32 format=0;
+	GevGetFeatureValue(handle, "PixelFormat", &type, sizeof(format), &format);
+	int size = height * width * GetPixelSizeInBytes(format);
+	int numBuffers = numBuf;
+	for(int i = 0; i < numBuffers; i++)
+	{
+		bufAddress[i] = (PUINT8)malloc(size);
+		memset(bufAddress[i], 0, size);
+	}
+
+	// Initialise Image Transfer
+	// TODO: Use Sync! It's more thread safe
+	if(GevInitializeTransfer(handle, Asynchronous, size, numBuf, bufAddress))
+	{
+		cerr << "Failed to Initiliaze image transfer\n";
+		return 1;
+	}
+
+	// TODO: Offload this to record/start functions?
+	if(GevStartTransfer(handle, -1))
+	{
+		cerr << "Failed to start image transfer\n";
+		return 1;
+	}	
+
+	// // Obtain the first image so _tNextFrameMicroseconds can be set
+	// GEV_BUFFER_OBJECT* img_obj = nextAcquiredImage();
+	// _tNextFrameMicroseconds = periodMicroseconds() + 
+	// 	combineTimestamps(img_obj->timestamp_lo, img_obj->timestamp_hi);
 
 	_isOpened = 1;
 
@@ -411,8 +623,6 @@ int DalsaCamera::getNextImage(cv::Mat *img)
 int DalsaCamera::getNextImage2(cv::Mat *img)
 {
 
-	GEV_BUFFER_OBJECT* imgGev = NULL;
-
 	// Check for camera state
 	if(!isOpened())
 	{
@@ -420,38 +630,21 @@ int DalsaCamera::getNextImage2(cv::Mat *img)
 		return 1;
 	}
 
-	// Soft Trigger
-	GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
-	GevWaitForNextImage(handle, &imgGev, 1000);
-
-	// // Cache frames to the map until the next one is acquired
-	// uint64_t next_timestamp = 0;
-	// while(!next_timestamp)
-	// {
-	// 	// Acquire next image and cache into map
-	// 	GEV_BUFFER_OBJECT *nextImage = nextAcquiredImage();
-	// 	uint64_t acquired_t = combineTimestamps(nextImage->timestamp_lo, nextImage->timestamp_hi);
-	// 	_reorderingMap[acquired_t] = nextImage;
-
-	// 	// Check for _tNextFrameMicroseconds within a microsecond tolerance to account for rounding error
-	// 	for(uint64_t t=_tNextFrameMicroseconds-2; t<=_tNextFrameMicroseconds+2; t++)
-	// 	{
-	// 		if(_reorderingMap.find(t) != _reorderingMap.end())
-	// 		{
-	// 			next_timestamp = t;
-	// 			break;
-	// 		}
-	// 	}
-	// }
+	if(GevSetFeatureValueAsString(handle, "TriggerSoftware", "On"))
+	{
+		cerr << "Failed to TriggerSoftware" << endl;
+		return 1;
+	}
+	else
+	{
+		cerr << "Success to TriggerSoftware" << endl;
+	}
 	
-  	// // Get the next frame
-   	// GEV_BUFFER_OBJECT *imgGev = _reorderingMap[next_timestamp];
-   	// _reorderingMap.erase(next_timestamp);
+  	// Get the next frame
+   	GEV_BUFFER_OBJECT* imgGev = NULL;
+	GevWaitForNextImage(handle, &imgGev, TIMEOUT_US);
 
-	// logImg(imgGev);
-
-	// //TODO: handle a reset of next frame
-	// _tNextFrameMicroseconds = next_timestamp + periodMicroseconds();
+	logImg(imgGev);
 
 	// Debayer the image
     cv::Mat imgCv = cv::Mat(height(), width(), CV_8UC1, imgGev->address);
