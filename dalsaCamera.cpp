@@ -629,20 +629,31 @@ int DalsaCamera::getNextImage2(cv::Mat *img)
 		cerr << "open camera before calling get_next_image";
 		return 1;
 	}
+		
+	// Get the next frame
+	GEV_BUFFER_OBJECT* imgGev = NULL;
+	for(;;)
+	{
 
-	if(GevSetFeatureValueAsString(handle, "TriggerSoftware", "On"))
-	{
-		cerr << "Failed to TriggerSoftware" << endl;
-		return 1;
+		if(GevSetFeatureValueAsString(handle, "TriggerSoftware", "On"))
+		{
+			cerr << "Failed to TriggerSoftware" << endl;
+			return 1;
+		}
+		else
+		{
+			cerr << "Success to TriggerSoftware" << endl;
+		}
+
+		GEV_STATUS state = GevWaitForNextImage(handle, &imgGev, 1000);
+		printf("state:%d\n", state);
+
+		if(state == GEVLIB_OK)
+		{
+			break;
+		}
 	}
-	else
-	{
-		cerr << "Success to TriggerSoftware" << endl;
-	}
-	
-  	// Get the next frame
-   	GEV_BUFFER_OBJECT* imgGev = NULL;
-	GevWaitForNextImage(handle, &imgGev, TIMEOUT_US);
+
 
 	logImg(imgGev);
 

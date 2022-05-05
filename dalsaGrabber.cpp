@@ -141,7 +141,7 @@ void softTrigger(DalsaCamera *camera)
     // Setup OpenCV display window
     namedWindow(WINDOW_NAME, WINDOW_NORMAL);
  
-    // // // Use first image to setup window
+    // Use first image to setup window
     if(camera->getNextImage2(&img))
     {
         camera->close();
@@ -161,13 +161,13 @@ void softTrigger(DalsaCamera *camera)
              break;
          }
 
-         // // Display
-         cv::Mat displayImg;
-         cv::resize(img, displayImg, cv::Size(), MONITOR_SCALE, MONITOR_SCALE);
+        // Display
+        cv::Mat displayImg;
+        cv::resize(img, displayImg, cv::Size(), MONITOR_SCALE, MONITOR_SCALE);
 
-         imshow(WINDOW_NAME, displayImg);
-         img.release();
-         displayImg.release(); 
+        imshow(WINDOW_NAME, displayImg);
+        img.release();
+        displayImg.release(); 
 
         // User input
         int key = waitKey(1);
@@ -179,7 +179,7 @@ void softTrigger(DalsaCamera *camera)
     }
 
     // Cleanup
-    //camera->close();
+    camera->close();
     cvDestroyWindow(WINDOW_NAME);
 }
 
