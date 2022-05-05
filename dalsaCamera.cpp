@@ -423,7 +423,7 @@ int DalsaCamera::open2(int width, int height, float framerate, float exposureTim
 
     // Set the Nano to Trigger on Action1.
 	GevSetFeatureValueAsString(handle, "TriggerMode", "On");
-    GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
+    //GevSetFeatureValueAsString(handle, "TriggerSoftware", "On");
 
 	// Get camera settings
 	// TODO: Assert the retrieved value matches the one passed in
